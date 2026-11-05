@@ -1,3 +1,21 @@
-nbproject
-node_modules
-**/.tmp
+# Dependencies and package-manager state
+node_modules/
+
+# Generated distributions and documentation
+/artifacts/
+/package/
+
+# Build staging and temporary files
+.tmp/
+temp/
+/.go-objects-build-*/
+
+# Coverage and local test results
+/coverage/
+
+# Package archives
+*.tgz
+
+# Editor and operating-system files
+.DS_Store
+/nbproject/

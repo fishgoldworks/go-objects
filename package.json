@@ -1,24 +1,60 @@
 {
-    "name": "go-objects",
-    "description": "Object utilities",
-    "author": "Michael Ko",
-    "email": "koyote130708@gmail.com",
-    "version": "0.0.1",
-    "license": "GNU LGPLv3",
-    "keywords": ["object", "utilities"],
-    "main": "index.js",
-    "scripts": {
-        "test": "mocha -u tdd test/ObjectsTest.js",
-		"test-coverage": "nyc --reporter=html mocha -u tdd test/ObjectsTest.js",
-        "doc": "documentation build src/Objects.js -f md -o README.md",
-        "doc-html": "documentation build src/Objects.js -f html -o docs"
-    },
-    "dependencies": {
-    },
-    "devDependencies": {
-        "chai": "^3.5.0",
-        "mocha": "^3.1.2",
-        "documentation": "^13.2.5"
-    },
-    "engine": "node >= 0.10"
+  "name": "go-objects",
+  "version": "3.0.8",
+  "private": true,
+  "description": "Own-property object utilities, persistent chains, safe mutable and immutable paths, and graph-aware cloning.",
+  "license": "MIT",
+  "author": "Michael Ko",
+  "email": "koyote130708@gmail.com",
+  "keywords": [
+    "object",
+    "utilities"
+  ],
+  "homepage": "https://github.com/koyote130708/go-objects",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/koyote130708/go-objects.git"
+  },
+  "type": "commonjs",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "docs": "node scripts/docs.js",
+    "pack:package": "node scripts/pack-package.js",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix --max-warnings 0",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "test": "node scripts/test.js",
+    "test:docs": "node scripts/docs.js --check && node scripts/lib/check-library-readme.cjs scripts/README.template.md README.md && node --test scripts/test-docs.js test/readme.test.js && node scripts/test-examples.js",
+    "test:types": "node scripts/test-types.js",
+    "test:build": "node --test scripts/test-build.js scripts/test-runtime-runner.js scripts/test-package-workflow.js scripts/test-completion.js scripts/test-mutation-runner.js scripts/test-process-infrastructure.js scripts/test-consumer-contracts.js scripts/test-performance-tools.js",
+    "test:artifacts": "node --test scripts/test-artifacts.js",
+    "test:runtime": "node scripts/test-runtime.js",
+    "test:tree-shaking": "node scripts/test-tree-shaking.js",
+    "test:package": "node scripts/test-package.js",
+    "test:browser": "python scripts/test-browser.py",
+    "test:mutations": "node scripts/test-mutations.js",
+    "coverage": "node scripts/test.js --experimental-test-coverage --test-coverage-include=\"src/**\" --test-coverage-lines=100 --test-coverage-branches=99 --test-coverage-functions=100 --test-coverage-exclude=\"**/temp/**\" --test-coverage-exclude=\"**/.tmp/**\"",
+    "verify": "node scripts/verify.js",
+    "verify:all": "node scripts/verify.js --all",
+    "benchmark": "node scripts/benchmark.js",
+    "benchmark:compare": "node scripts/benchmark-compare.js",
+    "prepack": "node scripts/reject-root-package.js",
+    "prepublishOnly": "node scripts/reject-root-package.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "esbuild": "0.25.5",
+    "eslint": "10.11.0",
+    "globals": "16.5.0",
+    "prettier": "3.9.6",
+    "terser": "5.51.2",
+    "typescript": "5.8.3",
+    "typescript-eslint": "8.70.1"
+  },
+  "overrides": {
+    "minimatch@<11.0.1": "11.0.4"
+  }
 }

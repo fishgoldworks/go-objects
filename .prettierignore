@@ -1,0 +1,27 @@
+# Dependencies and package-manager state
+node_modules/
+
+# Generated distributions and documentation
+/README.md
+/artifacts/
+/docs/API.md
+/package/
+
+# Build staging and temporary files
+.tmp/
+temp/
+/.go-objects-build-*/
+
+# Coverage and local test results
+/coverage/
+
+# Lockfiles
+/package-lock.json
+
+# Historical records and third-party material
+/LICENSE.md
+/docs/PERFORMANCE.md
+
+# Editor and operating-system files
+.DS_Store
+/nbproject/

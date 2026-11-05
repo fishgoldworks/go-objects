@@ -1,0 +1,1231 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>go-objects browser checks</title>
+  </head>
+  <body>
+    <h1>go-objects browser checks</h1>
+    <p>
+      Serve the project directory over HTTP, then open this file. The static module graph and both distributed browser
+      formats are checked.
+    </p>
+    <pre id="results">Running…</pre>
+    <script src="../../package/dist/go-objects.js"></script>
+    <script type="module">
+      const results = [];
+      function assert(condition, message = 'Unexpected result') {
+        if (!condition) throw new Error(message);
+      }
+      function equal(actual, expected) {
+        assert(
+          JSON.stringify(actual) === JSON.stringify(expected),
+          JSON.stringify(actual) + ' != ' + JSON.stringify(expected)
+        );
+      }
+      function check(name, fn) {
+        try {
+          fn();
+          results.push({ name, pass: true });
+        } catch (error) {
+          results.push({ name, pass: false, error: String(error.stack || error) });
+        }
+      }
+      function suite(O, label) {
+        const source = () => ({ a: 1, b: 2, c: 1 });
+        const deep = () => ({ a: { x: 1 }, b: [2, 1] });
+        const checks = {
+          setImmutable: () => {
+            const a = { n: 1, b: { x: 2 } },
+              b = O.setImmutable(a, 'n', 2);
+            assert(a.n === 1 && b.n === 2 && b.b === a.b);
+          },
+          updateImmutable: () => {
+            const a = Object.freeze({ n: 1 }),
+              b = O.updateImmutable(a, 'n', (n) => n + 1);
+            assert(a.n === 1 && b.n === 2);
+          },
+          unsetImmutable: () => {
+            const a = { n: 1 },
+              b = O.unsetImmutable(a, 'n');
+            assert(a.n === 1 && !Object.hasOwn(b, 'n'));
+          },
+          deepFindEntry: () => equal(O.deepFindEntry({ a: { n: 1 } }, 1), [['a', 'n'], 1]),
+          has: () => assert(O.has({ a: { x: undefined } }, 'a.x') && !O.has({ a: 1 }, 'missing')),
+          update: () => {
+            const obj = { attempts: 2 };
+            assert(O.update(obj, 'attempts', (n) => n + 1) === 2 && obj.attempts === 3);
+          },
+          some: () => assert(O.some({ a: 0, b: 1 }, 0) && !O.some({}, undefined)),
+          every: () => assert(O.every({}, undefined) && !O.every({ a: 1, b: 2 }, 1)),
+          findEntry: () => equal(O.findEntry({ a: 1, b: 2 }, 2), ['b', 2]),
+          keys: () => equal(O.keys(source()), ['a', 'b', 'c']),
+          values: () => equal(O.values(source()), [1, 2, 1]),
+          entries: () => equal(O.entries({ a: 1 }), [['a', 1]]),
+          hasKey: () => assert(O.hasKey({ a: 1 }, 'a')),
+          hasProp: () => assert(O.hasProp(Object.defineProperty({}, 'x', { value: 1 }), 'x')),
+          hasValue: () => assert(O.hasValue({ a: NaN }, NaN)),
+          get: () => assert(O.get({ a: null }, 'a.b', 9) === 9),
+          getEach: () => equal(O.getEach(source(), ['a', 'b']), [1, 2]),
+          set: () => {
+            const obj = {};
+            O.set(obj, 'a[0].x', 3);
+            equal(obj, { a: [{ x: 3 }] });
+          },
+          setEach: () => {
+            const obj = { a: 1, b: 2 };
+            equal(O.setEach(obj, ['a', 'b'], 9), [1, 2]);
+            equal(obj, { a: 9, b: 9 });
+          },
+          unset: () => {
+            const obj = { a: 1 };
+            assert(O.unset(obj, 'a'));
+            equal(obj, {});
+          },
+          forEach: () => {
+            let total = 0;
+            O.forEach(source(), (v) => (total += v));
+            assert(total === 4);
+          },
+          map: () =>
+            equal(
+              O.map({ a: 1 }, (v) => v * 2),
+              { a: 2 }
+            ),
+          mapKeys: () =>
+            equal(
+              O.mapKeys({ a: 1 }, (v, k) => k.toUpperCase()),
+              { A: 1 }
+            ),
+          filter: () =>
+            equal(
+              O.filter(source(), (v) => v > 1),
+              { b: 2 }
+            ),
+          reduce: () => assert(O.reduce(source(), (a, v) => a + v, 0) === 4),
+          reduceRight: () => assert(O.reduceRight({ a: 'a', b: 'b' }, (a, v) => a + v, '') === 'ba'),
+          find: () => assert(O.find(source(), 2) === 2),
+          findLast: () => assert(O.findLast(source(), (v) => v > 0) === 1),
+          findAll: () => equal(O.findAll(source(), 1), [1, 1]),
+          findKey: () => assert(O.findKey(source(), 2) === 'b'),
+          findPath: () => equal(O.findPath(deep(), 2), ['b', '0']),
+          count: () => assert(O.count(source(), 1) === 2),
+          pick: () => equal(O.pick(source(), ['b']), { b: 2 }),
+          omit: () => equal(O.omit(source(), ['a', 'c']), { b: 2 }),
+          merge: () => equal(O.merge({ a: 1 }, { a: 2, b: 3 }), { a: 2, b: 3 }),
+          intersect: () => equal(O.intersect(source(), { b: 2 }), { b: 2 }),
+          except: () => equal(O.except(source(), { a: 1, c: 1 }), { b: 2 }),
+          remove: () => {
+            const obj = source();
+            assert(O.remove(obj, 1) === 1);
+            equal(obj, { b: 2, c: 1 });
+          },
+          removeLast: () => {
+            const obj = source();
+            assert(O.removeLast(obj, 1) === 1);
+            equal(obj, { a: 1, b: 2 });
+          },
+          removeAll: () => {
+            const obj = source();
+            equal(O.removeAll(obj, 1), [1, 1]);
+            equal(obj, { b: 2 });
+          },
+          replace: () => {
+            const obj = source();
+            assert(O.replace(obj, 1, 9) === 1);
+            assert(obj.a === 9);
+          },
+          replaceLast: () => {
+            const obj = source();
+            assert(O.replaceLast(obj, 1, 9) === 1);
+            assert(obj.c === 9);
+          },
+          replaceAll: () => {
+            const obj = source();
+            equal(O.replaceAll(obj, 1, 9), [1, 1]);
+            equal(obj, { a: 9, b: 2, c: 9 });
+          },
+          clone: () => {
+            const input = deep(),
+              copy = O.clone(input);
+            assert(copy !== input && copy.a === input.a);
+          },
+          deepClone: () => {
+            const input = deep(),
+              copy = O.deepClone(input);
+            assert(copy !== input && copy.a !== input.a);
+            equal(copy, input);
+          },
+          deepForEach: () => {
+            let count = 0;
+            O.deepForEach(deep(), () => count++);
+            assert(count === 5);
+          },
+          deepMap: () =>
+            equal(
+              O.deepMap(deep(), (v) => (typeof v === 'number' ? v * 2 : v)),
+              { a: { x: 2 }, b: [4, 2] }
+            ),
+          deepMapKeys: () =>
+            equal(
+              O.deepMapKeys({ a: { x: 1 } }, (v, k) => k.toUpperCase()),
+              { A: { X: 1 } }
+            ),
+          deepFilter: () =>
+            equal(
+              O.deepFilter(deep(), (v) => typeof v !== 'number' || v > 1),
+              { a: {}, b: [2] }
+            ),
+          deepFind: () => assert(O.deepFind(deep(), 2) === 2),
+          deepFindLast: () => assert(O.deepFindLast(deep(), 1) === 1),
+          deepFindAll: () => equal(O.deepFindAll(deep(), 1), [1, 1]),
+          deepFindKey: () => assert(O.deepFindKey(deep(), 2) === '0'),
+          deepCount: () => assert(O.deepCount(deep(), 1) === 2),
+          deepRemove: () => {
+            const obj = deep();
+            assert(O.deepRemove(obj, 1) === 1);
+            equal(obj.a, {});
+          },
+          deepRemoveLast: () => {
+            const obj = deep();
+            assert(O.deepRemoveLast(obj, 1) === 1);
+            assert(!(1 in obj.b));
+          },
+          deepRemoveAll: () => {
+            const obj = deep();
+            equal(O.deepRemoveAll(obj, 1), [1, 1]);
+            assert(O.deepCount(obj, 1) === 0);
+          },
+          deepReplace: () => {
+            const obj = deep();
+            assert(O.deepReplace(obj, 1, 9) === 1);
+            assert(obj.a.x === 9);
+          },
+          deepReplaceLast: () => {
+            const obj = deep();
+            assert(O.deepReplaceLast(obj, 1, 9) === 1);
+            assert(obj.b[1] === 9);
+          },
+          deepReplaceAll: () => {
+            const obj = deep();
+            equal(O.deepReplaceAll(obj, 1, 9), [1, 1]);
+            assert(O.deepCount(obj, 9) === 2);
+          }
+        };
+        for (const realm of ['local', 'foreign']) {
+          function hostValue(run) {
+            const iframe = realm === 'foreign' ? document.createElement('iframe') : undefined;
+            if (iframe) document.body.appendChild(iframe);
+            const value = iframe ? iframe.contentDocument.all : document.all;
+            const key = Symbol('host property');
+            Object.defineProperty(value, key, { value: 42, enumerable: true, configurable: true });
+            try {
+              run(value, key);
+            } finally {
+              delete value[key];
+              if (iframe) iframe.remove();
+            }
+          }
+          check(label + ': ' + realm + ' document.all own-property queries', () => {
+            equal(O.keys(undefined), []);
+            assert(!O.hasProp(undefined, 'missing'));
+            hostValue((value, key) => {
+              assert(Object(value) === value && value !== undefined, 'Host collection is an object');
+              const keys = Object.keys(value).concat(
+                Object.getOwnPropertySymbols(value).filter((name) =>
+                  Object.prototype.propertyIsEnumerable.call(value, name)
+                )
+              );
+              assert(O.keys(value).every((name, index) => name === keys[index]));
+              assert(O.keys(value).length === keys.length);
+              assert(O.values(value).every((item, index) => item === value[keys[index]]));
+              assert(O.values(value).length === keys.length);
+              const entries = O.entries(value);
+              assert(entries.length === keys.length);
+              assert(entries.every(([name, item], index) => name === keys[index] && item === value[name]));
+              assert(O.hasKey(value, key) && O.hasProp(value, key) && O.hasValue(value, 42));
+              assert(O.get(value, key) === 42 && O.has(value, [key]));
+            });
+          });
+          check(label + ': ' + realm + ' document.all root traversal', () => {
+            hostValue((value, key) => {
+              assert(O.deepFind(value, 42) === 42);
+              const mapped = O.map(value, (item) => item);
+              assert(mapped[key] === 42);
+            });
+          });
+          check(label + ': ' + realm + ' document.all clone policy', () => {
+            hostValue((value) => {
+              for (const name of ['clone', 'deepClone']) {
+                assert(O[name](undefined, { unsupported: 'throw' }) === undefined);
+                assert(O[name](value) === value);
+                let threw = false;
+                try {
+                  O[name](value, { unsupported: 'throw' });
+                } catch (error) {
+                  assert(error instanceof TypeError);
+                  threw = true;
+                }
+                assert(threw, 'Unsupported host object must be rejected');
+              }
+              assert(O.deepClone({ host: value }).host === value);
+              let threw = false;
+              try {
+                O.deepClone({ host: value }, { unsupported: 'throw' });
+              } catch (error) {
+                assert(error instanceof TypeError);
+                threw = true;
+              }
+              assert(threw);
+            });
+          });
+        }
+        for (const realm of ['local', 'foreign']) {
+          function callableHost(run) {
+            const iframe = realm === 'foreign' ? document.createElement('iframe') : undefined;
+            if (iframe) document.body.appendChild(iframe);
+            const doc = iframe ? iframe.contentDocument : document;
+            const element = doc.createElement('div');
+            element.id = 'go_objects_callable_host_target';
+            doc.body.appendChild(element);
+            try {
+              run(doc.all, element, element.id);
+            } finally {
+              element.remove();
+              if (iframe) iframe.remove();
+            }
+          }
+          check(label + ': ' + realm + ' callable host transformations', () => {
+            callableHost((callback, element, id) => {
+              const source = { 0: id };
+              assert(Reflect.apply(callback, source, [id, '0', source]) === element, 'Native callable control');
+              assert(O.map(source, callback)[0] === element);
+              assert(O.filter(source, callback)[0] === id);
+              assert(O.forEach(source, callback) === source);
+              assert(O.deepForEach(source, callback) === source);
+              assert(O.deepMap(source, callback)[0] === element);
+              assert(O.deepFilter(source, callback)[0] === id);
+              assert(O.reduce({ 0: 0 }, callback, id) === element);
+              assert(O.reduceRight({ 0: 0 }, callback, id) === element);
+              equal(O.map({}, callback), {});
+              for (const invalid of [undefined, null, {}, 0]) {
+                let threw = false;
+                try {
+                  O.map({}, invalid);
+                } catch (error) {
+                  assert(error instanceof TypeError);
+                  threw = true;
+                }
+                assert(threw, 'Non-callable control must fail even for an empty input');
+              }
+            });
+          });
+          check(label + ': ' + realm + ' callable host predicates', () => {
+            callableHost((predicate, element, id) => {
+              const source = { 0: id };
+              assert(O.count(source, predicate) === 1 && O.some(source, predicate) && O.every(source, predicate));
+              assert(O.find(source, predicate) === id && O.findLast(source, predicate) === id);
+              equal(O.findAll(source, predicate), [id]);
+              assert(O.findKey(source, predicate) === '0');
+              equal(O.findEntry(source, predicate), ['0', id]);
+              assert(O.deepCount(source, predicate) === 1);
+              assert(O.deepFind(source, predicate) === id && O.deepFindLast(source, predicate) === id);
+              equal(O.deepFindAll(source, predicate), [id]);
+              assert(O.deepFindKey(source, predicate) === '0');
+              equal(O.findPath(source, predicate), ['0']);
+              equal(O.deepFindEntry(source, predicate), [['0'], id]);
+              assert(O.find({ 0: 'missing_host_target' }, predicate) === undefined);
+              assert(Reflect.apply(predicate, source, [id, '0', source]) === element);
+            });
+          });
+          check(label + ': ' + realm + ' callable host replacements', () => {
+            callableHost((replacement, element, id) => {
+              for (const method of [
+                'replace',
+                'replaceLast',
+                'replaceAll',
+                'deepReplace',
+                'deepReplaceLast',
+                'deepReplaceAll'
+              ]) {
+                const source = { 0: id };
+                O[method](source, id, replacement);
+                assert(source[0] === element, method);
+              }
+              const source = { 0: id };
+              assert(O.update(source, '0', replacement) === id && source[0] === element);
+              assert(O.updateImmutable({ 0: id }, '0', replacement)[0] === element);
+              for (const method of [
+                'remove',
+                'removeLast',
+                'removeAll',
+                'deepRemove',
+                'deepRemoveLast',
+                'deepRemoveAll'
+              ]) {
+                const input = { 0: id };
+                O[method](input, replacement);
+                assert(!Object.prototype.hasOwnProperty.call(input, '0'), method);
+              }
+            });
+          });
+          check(label + ': ' + realm + ' falsy callable host descent', () => {
+            callableHost((shouldDescend, element, id) => {
+              const child = { 0: id },
+                source = { branch: child },
+                options = { shouldDescend };
+              assert(Reflect.apply(shouldDescend, source, [child, 'branch', source, ['branch']]) === null);
+              let calls = 0;
+              O.deepForEach(
+                source,
+                () => {
+                  calls++;
+                },
+                options
+              );
+              assert(calls === 1, 'Falsy callback must still decide descent');
+              assert(O.deepFind(source, id, options) === undefined);
+              assert(O.deepMap(source, (value) => value, options).branch === child);
+              assert(O.deepFilter(source, () => true, options).branch === child);
+              assert(O.deepMapKeys(source, (_, key) => key, options).branch === child);
+              equal(O.deepReplaceAll(source, id, element, options), []);
+              assert(child[0] === id);
+            });
+          });
+        }
+        for (const method of ['clone', 'deepClone']) {
+          check(label + ': ' + method + ' rejects inherited Error tags without invocation', () => {
+            const frame = document.createElement('iframe');
+            document.body.appendChild(frame);
+            const realm = frame.contentWindow;
+            try {
+              for (const owner of [realm.Error.prototype, realm.Object.prototype]) {
+                let reads = 0;
+                Object.defineProperty(owner, Symbol.toStringTag, {
+                  configurable: true,
+                  get() {
+                    reads++;
+                    throw new Error('Inherited tag getter must not run');
+                  }
+                });
+                try {
+                  const source = new realm.TypeError('tagged');
+                  assert(O[method](source) === source);
+                  let threw = false;
+                  try {
+                    O[method](source, { unsupported: 'throw' });
+                  } catch (error) {
+                    assert(error instanceof TypeError);
+                    threw = true;
+                  }
+                  assert(threw && reads === 0);
+                  const record = new realm.Object();
+                  record.value = 42;
+                  assert(O[method](record).value === 42 && reads === 0);
+                } finally {
+                  delete owner[Symbol.toStringTag];
+                }
+              }
+            } finally {
+              frame.remove();
+            }
+          });
+        }
+        for (const method of ['clone', 'deepClone']) {
+          for (const policy of ['reference', 'throw']) {
+            check(label + ': ' + method + ' revalidates changed Error constructors (' + policy + ')', () => {
+              let reads = 0,
+                calls = 0;
+              const proto = new Proxy(Error.prototype, {
+                getOwnPropertyDescriptor(target, key) {
+                  const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
+                  if (key === 'constructor' && ++reads >= 3)
+                    return {
+                      ...descriptor,
+                      value: function Unexpected() {
+                        calls++;
+                        return new Error('wrong');
+                      }
+                    };
+                  return descriptor;
+                }
+              });
+              const input = new Proxy(new Error('source'), { getPrototypeOf: () => proto });
+              if (policy === 'reference') assert(O[method](input) === input);
+              else {
+                let threw = false;
+                try {
+                  O[method](input, { unsupported: policy });
+                } catch (error) {
+                  assert(error instanceof TypeError);
+                  threw = true;
+                }
+                assert(threw);
+              }
+              assert(calls === 0);
+            });
+          }
+        }
+        for (const method of ['clone', 'deepClone']) {
+          check(label + ': ' + method + ' rejects Error prototype lookalikes', () => {
+            const fake = Object.create(Error.prototype);
+            assert(O[method](fake) === fake);
+            let threw = false;
+            try {
+              O[method](fake, { unsupported: 'throw' });
+            } catch (error) {
+              assert(error instanceof TypeError);
+              threw = true;
+            }
+            assert(threw);
+          });
+          check(label + ': ' + method + ' rejects stable Error proxies', () => {
+            const proxy = new Proxy(new TypeError('source'), {});
+            assert(O[method](proxy) === proxy);
+            let threw = false;
+            try {
+              O[method](proxy, { unsupported: 'throw' });
+            } catch (error) {
+              assert(error instanceof TypeError);
+              threw = true;
+            }
+            assert(threw);
+          });
+        }
+        for (const method of ['setImmutable', 'updateImmutable', 'unsetImmutable']) {
+          check(label + ': ' + method + ' rejects arbitrary array-object prototypes', () => {
+            const proto = [],
+              input = [1];
+            Object.setPrototypeOf(input, proto);
+            let called = false,
+              threw = false;
+            try {
+              if (method === 'setImmutable') O[method](input, [0], 2);
+              else if (method === 'updateImmutable')
+                O[method](input, [0], (value) => {
+                  called = true;
+                  return value + 1;
+                });
+              else O[method](input, [0]);
+            } catch (error) {
+              assert(error instanceof TypeError);
+              threw = true;
+            }
+            assert(threw && input[0] === 1 && Object.getPrototypeOf(input) === proto);
+            if (method === 'updateImmutable') assert(!called);
+          });
+        }
+        for (const name of Object.keys(O))
+          check(label + ': ' + name, () => {
+            assert(typeof checks[name] === 'function', 'Missing browser check for ' + name);
+            checks[name]();
+          });
+        check(label + ': has terminal getter safety', () => {
+          const obj = {
+            get a() {
+              throw new Error('terminal');
+            }
+          };
+          assert(O.has(obj, 'a'));
+        });
+        check(label + ': updater failure leaves no new branches', () => {
+          const obj = {};
+          let threw = false;
+          try {
+            O.update(obj, 'a[0].b', () => {
+              throw new Error('callback');
+            });
+          } catch {
+            threw = true;
+          }
+          assert(threw && Object.keys(obj).length === 0);
+        });
+        check(label + ': update rejects unsafe paths before callback', () => {
+          let calls = 0,
+            threw = false;
+          try {
+            O.update({}, 'constructor.prototype.polluted', () => ++calls);
+          } catch {
+            threw = true;
+          }
+          assert(threw && calls === 0 && {}.polluted === undefined);
+        });
+        check(label + ': short-circuit value reads', () => {
+          const obj = {
+            a: 0,
+            get b() {
+              throw new Error('must not read');
+            }
+          };
+          assert(O.some(obj, 0) && !O.every(obj, 1));
+          equal(O.findEntry(obj, 0), ['a', 0]);
+        });
+        check(label + ': entry value snapshot', () => {
+          let reads = 0;
+          const obj = {
+            get a() {
+              return ++reads;
+            }
+          };
+          equal(
+            O.findEntry(obj, () => true),
+            ['a', 1]
+          );
+          assert(reads === 1);
+        });
+        check(label + ': count argument presence and getters', () => {
+          assert(O.count({ a: undefined, b: 1 }) === 2);
+          assert(O.count({ a: undefined, b: 1 }, undefined) === 1);
+          assert(
+            O.count({
+              get a() {
+                throw new Error('count getter');
+              }
+            }) === 1
+          );
+        });
+        check(label + ': omission skips excluded getters', () => {
+          const obj = {
+            a: 1,
+            get secret() {
+              throw new Error('excluded');
+            }
+          };
+          equal(O.omit(obj, ['secret']), { a: 1 });
+        });
+        check(label + ': strict shallow collisions', () => {
+          let threw = false;
+          try {
+            O.mapKeys({ A: 1, a: 2 }, (v, k) => k.toLowerCase(), { onCollision: 'throw' });
+          } catch {
+            threw = true;
+          }
+          assert(threw);
+        });
+        check(label + ': strict deep collisions and depth limit', () => {
+          const obj = { nested: { A: 1, a: 2 } };
+          let threw = false;
+          try {
+            O.deepMapKeys(obj, (v, k) => k.toLowerCase(), { onCollision: 'throw' });
+          } catch {
+            threw = true;
+          }
+          assert(threw);
+          const shallow = O.deepMapKeys(obj, (v, k) => k, { onCollision: 'throw', maxDepth: 1 });
+          assert(shallow.nested === obj.nested);
+        });
+        check(label + ': new wrapper value/result', () => {
+          const obj = { a: 1 },
+            chain = O(obj).update('a', (n) => n + 1);
+          assert(chain.unwrap() === obj && chain.result() === 1 && chain.some(2).unwrap() === true);
+        });
+        check(label + ': persistent wrapper branches', () => {
+          const a = O({ x: 1 }),
+            b = a.keys(),
+            c = b.count();
+          assert(a.unwrap().x === 1);
+          equal(b.unwrap(), ['x']);
+          assert(c.unwrap() === 1);
+        });
+        check(label + ': preserved array keys', () => {
+          const a = O.deepMapKeys({ a: [{ x_y: 1 }] }, (_, k) => String(k).replace('_', ''), { arrays: 'preserve' });
+          equal(a, { a: [{ xy: 1 }] });
+        });
+        check(label + ': missing replacement is rejected', () => {
+          const a = { x: 1 };
+          let threw = false;
+          try {
+            O.replaceAll(a, () => true);
+          } catch {
+            threw = true;
+          }
+          assert(threw && a.x === 1);
+        });
+        check(label + ': immutable hole deletion', () => {
+          const a = Object.freeze([1, 2]),
+            b = O.unsetImmutable(a, 0);
+          assert(b.length === 2 && !(0 in b) && a[0] === 1);
+        });
+        check(label + ': immutable path-local cycle', () => {
+          const a = { n: 1 };
+          a.self = a;
+          const b = O.setImmutable(a, 'n', 2);
+          assert(b.self === a && a.n === 1 && b.n === 2);
+        });
+        check(label + ': deep entry observed getter', () => {
+          let reads = 0;
+          equal(
+            O.deepFindEntry(
+              {
+                a: {
+                  get n() {
+                    return ++reads;
+                  }
+                }
+              },
+              (v) => v === 1
+            ),
+            [['a', 'n'], 1]
+          );
+          assert(reads === 1);
+        });
+        check(label + ': namespace completeness', () => assert(Object.keys(O).length === 60));
+        check(label + ': cycles and Map/Set aliases', () => {
+          const key = { n: 1 },
+            input = { key, map: new Map([[key, key]]), set: new Set([key]) };
+          input.self = input;
+          const copy = O.deepClone(input);
+          assert(copy.self === copy);
+          assert(copy.map.get(copy.key) === copy.key);
+          assert(copy.set.has(copy.key));
+        });
+        check(label + ': shared backing buffers', () => {
+          const buffer = new ArrayBuffer(16),
+            a = new Uint8Array(buffer, 2, 4),
+            b = new DataView(buffer, 4, 4);
+          buffer.view = a;
+          const copy = O.deepClone({ buffer, a, b });
+          assert(copy.buffer !== buffer);
+          assert(copy.a.buffer === copy.buffer && copy.b.buffer === copy.buffer && copy.buffer.view === copy.a);
+        });
+        check(label + ': prototype safety', () => {
+          let threw = false;
+          try {
+            O.set({}, ['constructor', 'prototype', 'polluted'], true);
+          } catch {
+            threw = true;
+          }
+          assert(threw && {}.polluted === undefined);
+          const input = JSON.parse('{"__proto__":{"n":1}}'),
+            copy = O.map(input, (v) => v);
+          assert(Object.getPrototypeOf(copy) === Object.prototype && Object.hasOwn(copy, '__proto__'));
+        });
+        check(label + ': independent pipeline wrappers', () => {
+          const first = O({ a: 1 }),
+            second = O({ b: 2 });
+          assert(first !== second);
+          equal(first.unwrap(), { a: 1 });
+          equal(
+            O({ a: 1, b: 2 })
+              .filter((v) => v > 1)
+              .map((v) => v * 2)
+              .unwrap(),
+            { b: 4 }
+          );
+        });
+        check(label + ': factory receiver and construction identity', () => {
+          const original = Object.freeze(O(1));
+          const next = O.bind(original)(2);
+          assert(next !== original && next.unwrap() === 2 && next.result() === 2);
+          assert(original.unwrap() === 1 && original.result() === 1);
+          class Derived extends O {}
+          assert(new Derived(3) instanceof Derived);
+          function Alternate() {}
+          const constructed = Reflect.construct(O, [4], Alternate);
+          assert(Object.getPrototypeOf(constructed) === Alternate.prototype && constructed._value === 4);
+        });
+        check(label + ': native Error stack', () => {
+          const input = new Error('browser source'),
+            copy = O.deepClone(input);
+          assert(copy !== input && Object.prototype.toString.call(copy) === '[object Error]');
+          assert(copy.message === input.message && Object.getPrototypeOf(copy) === Object.getPrototypeOf(input));
+          if (Object.prototype.hasOwnProperty.call(input, 'stack')) {
+            assert(copy.stack === input.stack, 'Own native stack retains the original call site');
+          } else {
+            // Firefox exposes stack through Error.prototype. Inherited state is
+            // not an own descriptor to copy; the new native Error has its own trace.
+            assert(!Object.prototype.hasOwnProperty.call(copy, 'stack'));
+            assert(typeof copy.stack === typeof input.stack && copy.stack.length > 0);
+          }
+          const custom = new Error('custom');
+          let reads = 0;
+          const getter = () => {
+            reads++;
+            throw new Error('Must not read custom stack');
+          };
+          Object.defineProperty(custom, 'stack', { get: getter, configurable: true });
+          const customCopy = O.deepClone(custom);
+          assert(reads === 0 && Object.getOwnPropertyDescriptor(customCopy, 'stack').get === getter);
+        });
+        check(label + ': deep chain stack safety', () => {
+          const input = {};
+          let node = input;
+          for (let i = 0; i < 10000; i++) node = node.next = {};
+          assert(O.deepClone(input) !== input);
+        });
+        check(label + ': immutable NaN and signed-zero identity', () => {
+          const a = Object.freeze({ n: NaN, z: -0 });
+          assert(O.setImmutable(a, 'n', NaN) === a);
+          const b = O.setImmutable(a, 'z', 0);
+          assert(b !== a && Object.is(a.z, -0) && Object.is(b.z, 0));
+        });
+        check(label + ': optional undefined versus sparse hole', () => {
+          const a = new Array(3);
+          a[1] = undefined;
+          assert(!O.has(a, 0) && O.has(a, 1));
+          assert(O.unsetImmutable(a, 0) === a);
+          const b = O.unsetImmutable(a, 1);
+          assert(b !== a && b.length === 3 && !(1 in b) && 1 in a);
+        });
+        check(label + ': skipped deleted mutation keys', () => {
+          let reads = 0;
+          const proto = {
+              get b() {
+                reads++;
+                return 8;
+              }
+            },
+            a = Object.create(proto);
+          Object.defineProperties(a, {
+            a: { value: 1, enumerable: true, configurable: true },
+            b: { value: 2, enumerable: true, configurable: true }
+          });
+          equal(
+            O.removeAll(a, (_, key) => {
+              if (key === 'a') delete a.b;
+              return false;
+            }),
+            []
+          );
+          assert(reads === 0 && a.a === 1);
+        });
+        check(label + ': preserved sparse array extras', () => {
+          const s = Symbol('extra'),
+            a = new Array(5);
+          a[2] = { x_y: 1 };
+          a[s] = 3;
+          const seen = [];
+          const b = O.deepMapKeys(
+            a,
+            (_, k) => {
+              seen.push(k);
+              return typeof k === 'string' ? k.replace('_', '') : k;
+            },
+            { arrays: 'preserve' }
+          );
+          assert(b.length === 5 && !(0 in b) && b[s] === 3 && b[2].xy === 1 && !seen.includes('2'));
+        });
+        check(label + ': deep last-match forward visitation', () => {
+          const seen = [];
+          assert(
+            O.deepFindLast({ a: { n: 1 }, b: 2 }, (v, k) => {
+              seen.push(k);
+              return typeof v === 'number';
+            }) === 2
+          );
+          equal(seen, ['a', 'n', 'b']);
+        });
+        check(label + ': frozen clone descriptor and aliases', () => {
+          const shared = { n: 1 },
+            a = Object.freeze({ first: shared, second: shared }),
+            b = O.deepClone(a);
+          assert(b !== a && Object.isFrozen(b) && b.first === b.second && b.first !== shared);
+        });
+        check(label + ': aggregate error graph', () => {
+          const a = {},
+            error = new AggregateError([], 'oops', { cause: a });
+          a.error = error;
+          error.errors.push(error);
+          const b = O.deepClone(a);
+          assert(b.error instanceof AggregateError && b.error.cause === b && b.error.errors[0] === b.error);
+        });
+        check(label + ': malformed paths cannot invoke updater', () => {
+          let calls = 0;
+          for (const path of ['a..b', 'a[01]', 'a[+1]', 'a[foo]']) {
+            let threw = false;
+            try {
+              O.update({}, path, () => ++calls);
+            } catch (e) {
+              threw = e instanceof SyntaxError;
+            }
+            assert(threw);
+          }
+          assert(calls === 0);
+        });
+        check(label + ': strict clone distinguishes shared children', () => {
+          const fn = () => 1,
+            a = { fn };
+          assert(O.clone(a, { unsupported: 'throw' }).fn === fn);
+          let threw = false;
+          try {
+            O.deepClone(a, { unsupported: 'throw' });
+          } catch (e) {
+            threw = e instanceof TypeError;
+          }
+          assert(threw);
+        });
+        check(label + ': depth zero never reads accessors', () => {
+          let reads = 0;
+          const a = {
+            get x() {
+              reads++;
+              throw Error('read');
+            }
+          };
+          assert(O.deepCount(a, () => true, { maxDepth: 0 }) === 0);
+          equal(
+            O.deepMap(a, (v) => v, { maxDepth: 0 }),
+            {}
+          );
+          assert(reads === 0);
+        });
+        check(label + ': performance cache never retains getter results', () => {
+          let reads = 0;
+          const a = {
+            row: {
+              get value() {
+                return ++reads;
+              }
+            }
+          };
+          for (let i = 1; i <= 30; i++) assert(O.get(a, 'row.value') === i);
+          assert(O.has(a, 'row.value') && reads === 30);
+        });
+        check(label + ': performance cache full-string collision validation', () => {
+          const a = { root: { k1000: { value: 1000 }, k1001: { value: 1001 } } };
+          for (let i = 0; i < 30; i++) {
+            assert(O.get(a, 'root.k1000.value') === 1000);
+            assert(O.get(a, 'root.k1001.value') === 1001);
+          }
+        });
+        check(label + ': literal deep search and mutation keep NaN semantics', () => {
+          const a = { first: { n: NaN }, second: { n: NaN } };
+          assert(O.deepCount(a, NaN) === 2);
+          const entries = O.deepFindEntry(a, NaN);
+          equal(entries[0], ['first', 'n']);
+          assert(Number.isNaN(entries[1]));
+          O.deepReplaceAll(a, NaN, 0);
+          assert(a.first.n === 0 && a.second.n === 0);
+        });
+        check(label + ': performance preserves independent callback paths', () => {
+          const seen = [];
+          O.deepForEach({ a: { b: 1 }, c: 2 }, (v, k, o, p) => {
+            seen.push([...p]);
+            p.push('changed');
+          });
+          equal(seen, [['a'], ['a', 'b'], ['c']]);
+        });
+        check(label + ': clone does not cache altered prototype classification', () => {
+          const p = Object.create(Array.prototype);
+          Object.defineProperty(p, 'constructor', { value: Array, writable: true, configurable: true });
+          const a = [{ n: 1 }];
+          Object.setPrototypeOf(a, p);
+          assert(O.deepClone(a) === a);
+          p.constructor = function Custom() {};
+          assert(O.deepClone(a) === a);
+          Object.setPrototypeOf(a, Array.prototype);
+          assert(O.deepClone(a) !== a);
+        });
+        check(label + ': custom prototypes cannot advertise themselves as plain records', () => {
+          const proto = Object.create(null);
+          Object.defineProperty(proto, 'constructor', { value: Object });
+          const child = Object.assign(Object.create(proto), { n: 1 });
+          assert(O.clone(child) === child && O.deepClone(child) === child);
+          const visited = [];
+          O.deepForEach({ child }, (_, key) => visited.push(key));
+          equal(visited, ['child']);
+          let rejected = false,
+            called = false;
+          try {
+            O.updateImmutable(child, 'n', () => {
+              called = true;
+              return 2;
+            });
+          } catch (error) {
+            rejected = error instanceof TypeError;
+          }
+          assert(rejected && !called && child.n === 1);
+          equal(O.keys(child), ['n']);
+          const record = Object.assign(Object.create(null), { n: 1 });
+          assert(O.deepClone(record) !== record);
+          assert(O.setImmutable(record, 'n', 2).n === 2);
+        });
+        check(label + ': null-prototype array graph cloning', () => {
+          const a = Object.setPrototypeOf([{ n: 1 }], null);
+          a.self = a;
+          const b = O.deepClone(a, { unsupported: 'throw' });
+          assert(b !== a && Array.isArray(b) && Object.getPrototypeOf(b) === null && b.self === b && b[0] !== a[0]);
+        });
+        check(label + ': immutable null-prototype array copying', () => {
+          const a = Object.setPrototypeOf([{ n: 1 }], null),
+            b = O.setImmutable(a, [0, 'n'], 2);
+          assert(b !== a && Array.isArray(b) && Object.getPrototypeOf(b) === null && b[0].n === 2 && a[0].n === 1);
+        });
+        check(label + ': clone builtin brand validation', () => {
+          const fake = Object.create(Date.prototype);
+          assert(O.clone(fake) === fake && O.deepClone(fake) === fake);
+          let threw = false;
+          try {
+            O.clone(fake, { unsupported: 'throw' });
+          } catch (error) {
+            threw = error instanceof TypeError;
+          }
+          assert(threw);
+          const proxied = new Proxy(new Map([[1, 2]]), {});
+          assert(O.deepClone(proxied) === proxied);
+        });
+        check(label + ': opaque custom-backed typed views', () => {
+          class CustomBuffer extends ArrayBuffer {}
+          const a = new Uint8Array(new CustomBuffer(8));
+          assert(O.clone(a) === a && O.deepClone(a) === a);
+          let threw = false;
+          try {
+            O.deepClone(a, { unsupported: 'throw' });
+          } catch (error) {
+            threw = error instanceof TypeError;
+          }
+          assert(threw);
+        });
+        check(label + ': opaque custom-backed DataView', () => {
+          class CustomBuffer extends ArrayBuffer {}
+          const a = new DataView(new CustomBuffer(8));
+          assert(O.clone(a) === a && O.deepClone({ a }).a === a);
+        });
+        for (const variant of ['null prototype', 'shadowed call']) {
+          check(label + ': callable dispatch - ' + variant, () => {
+            for (const method of ['forEach', 'map', 'mapKeys', 'filter', 'reduce', 'reduceRight']) {
+              const input = { n: 3 };
+              const reducing = method === 'reduce' || method === 'reduceRight';
+              let calls = 0;
+              const callback = function (...args) {
+                calls++;
+                assert(this === input && args.length === (reducing ? 4 : 3));
+                assert(args[reducing ? 3 : 2] === input);
+                if (reducing) return args[0] + args[1];
+                return method === 'mapKeys' ? 'renamed' : method === 'filter' ? true : args[0] * 2;
+              };
+              if (variant === 'null prototype') Object.setPrototypeOf(callback, null);
+              else
+                Object.defineProperty(callback, 'call', {
+                  get() {
+                    throw new Error('callback metadata must not be read');
+                  }
+                });
+              const result = reducing ? O[method](input, callback, 1) : O[method](input, callback);
+              const expected = {
+                forEach: input,
+                map: { n: 6 },
+                mapKeys: { renamed: 3 },
+                filter: input,
+                reduce: 4,
+                reduceRight: 4
+              };
+              equal(result, expected[method]);
+              assert(calls === 1 && input.n === 3);
+            }
+          });
+        }
+        for (const variant of ['null prototype', 'shadowed call']) {
+          check(label + ': matcher/replacement dispatch - ' + variant, () => {
+            const decorate = (callback) => {
+              if (variant === 'null prototype') return Object.setPrototypeOf(callback, null);
+              return Object.defineProperty(callback, 'call', {
+                get() {
+                  throw new Error('callback metadata must not be read');
+                }
+              });
+            };
+            const expected = {
+              count: 1,
+              some: true,
+              every: true,
+              find: 3,
+              findLast: 3,
+              findAll: [3],
+              findKey: 'n',
+              findEntry: ['n', 3],
+              remove: 3,
+              removeLast: 3,
+              removeAll: [3],
+              replace: 3,
+              replaceLast: 3,
+              replaceAll: [3]
+            };
+            for (const method of Object.keys(expected)) {
+              const input = { n: 3 };
+              let matches = 0;
+              let replacements = 0;
+              const predicate = decorate(function (value, key, parent) {
+                matches++;
+                assert(this === input && parent === input && arguments.length === 3);
+                assert(key === 'n' && value === 3);
+                return true;
+              });
+              const replacement = decorate(function (value, key, parent) {
+                replacements++;
+                assert(this === input && parent === input && arguments.length === 3);
+                assert(key === 'n' && value === 3);
+                return 7;
+              });
+              const replacing = method.startsWith('replace');
+              const result = replacing ? O[method](input, predicate, replacement) : O[method](input, predicate);
+              equal(result, expected[method]);
+              equal(input, method.startsWith('remove') ? {} : { n: replacing ? 7 : 3 });
+              assert(matches === 1 && replacements === (replacing ? 1 : 0));
+            }
+          });
+        }
+        for (const variant of ['null prototype', 'shadowed call']) {
+          check(label + ': deep callable and descent dispatch - ' + variant, () => {
+            const decorate = (callback) => {
+              if (variant === 'null prototype') return Object.setPrototypeOf(callback, null);
+              return Object.defineProperty(callback, 'call', {
+                get() {
+                  throw new Error('deep callback metadata must not be read');
+                }
+              });
+            };
+            const methods = [
+              'deepForEach',
+              'deepFind',
+              'deepFindLast',
+              'deepFindAll',
+              'deepFindKey',
+              'deepFindEntry',
+              'deepCount',
+              'findPath'
+            ];
+            for (const method of methods) {
+              const input = { branch: { n: 3 } };
+              let visits = 0,
+                descents = 0;
+              const callback = decorate(function (value, key, parent, path) {
+                visits++;
+                assert(this === parent && arguments.length === 4 && parent[key] === value);
+                equal(path, key === 'branch' ? ['branch'] : ['branch', 'n']);
+                return value === 3;
+              });
+              const shouldDescend = decorate(function (value, key, parent, path) {
+                descents++;
+                assert(this === input && parent === input && value === input.branch && key === 'branch');
+                assert(arguments.length === 4);
+                equal(path, ['branch']);
+                path.push('local');
+                return true;
+              });
+              const expected = {
+                deepForEach: input,
+                deepFind: 3,
+                deepFindLast: 3,
+                deepFindAll: [3],
+                deepFindKey: 'n',
+                deepFindEntry: [['branch', 'n'], 3],
+                deepCount: 1,
+                findPath: ['branch', 'n']
+              };
+              equal(O[method](input, callback, { shouldDescend }), expected[method]);
+              assert(visits === 2 && descents === 1);
+            }
+            for (const method of ['deepReplace', 'deepReplaceLast', 'deepReplaceAll']) {
+              const input = { branch: { n: 3 } };
+              const replacement = decorate(function (value, key, parent, path) {
+                assert(this === input.branch && parent === input.branch && value === 3 && key === 'n');
+                equal(path, ['branch', 'n']);
+                return 7;
+              });
+              equal(O[method](input, 3, replacement), method === 'deepReplaceAll' ? [3] : 3);
+              equal(input, { branch: { n: 7 } });
+            }
+          });
+        }
+        for (const variant of ['null-prototype', 'shadowed-call']) {
+          check(label + ': direct transformation callbacks - ' + variant, () => {
+            for (const method of ['deepMap', 'deepMapKeys', 'deepFilter']) {
+              const input = { branch: { n: 2 } };
+              const seen = [];
+              function mapper(value, key, parent, path) {
+                assert(this === parent && arguments.length === 4);
+                seen.push(path.slice());
+                path.push('callback-owned');
+                return method === 'deepMapKeys'
+                  ? key.toUpperCase()
+                  : method === 'deepFilter'
+                    ? true
+                    : typeof value === 'number'
+                      ? value * 10
+                      : value;
+              }
+              if (variant === 'null-prototype') Object.setPrototypeOf(mapper, null);
+              else
+                Object.defineProperty(mapper, 'call', {
+                  get() {
+                    throw Error('Unexpected call lookup');
+                  }
+                });
+              const output = O[method](input, mapper);
+              equal(
+                output,
+                method === 'deepMapKeys' ? { BRANCH: { N: 2 } } : method === 'deepMap' ? { branch: { n: 20 } } : input
+              );
+              equal(seen, [['branch'], ['branch', 'n']]);
+              assert(output !== input && output[method === 'deepMapKeys' ? 'BRANCH' : 'branch'] !== input.branch);
+              equal(input, { branch: { n: 2 } });
+            }
+          });
+        }
+        check(label + ': out-of-bounds resizable DataViews remain opaque', () => {
+          for (const method of ['clone', 'deepClone']) {
+            for (const length of [undefined, 4, 0]) {
+              const buffer = new ArrayBuffer(8, { maxByteLength: 16 });
+              const view = new DataView(buffer, 4, length);
+              buffer.resize(0);
+              assert(!buffer.detached);
+              assert(O[method](view) === view);
+              let rejected = false;
+              try {
+                O[method](view, { unsupported: 'throw' });
+              } catch (error) {
+                rejected = error instanceof TypeError;
+              }
+              assert(rejected);
+              buffer.resize(8);
+              assert(view.byteOffset === 4);
+            }
+          }
+        });
+        check(label + ': detached DataViews still fail under both clone policies', () => {
+          for (const method of ['clone', 'deepClone']) {
+            for (const resizable of [false, true]) {
+              const buffer = resizable ? new ArrayBuffer(8, { maxByteLength: 16 }) : new ArrayBuffer(8);
+              const view = new DataView(buffer);
+              structuredClone(buffer, { transfer: [buffer] });
+              for (const options of [undefined, { unsupported: 'throw' }]) {
+                let failed = false;
+                try {
+                  O[method](view, options);
+                } catch (error) {
+                  failed = error instanceof TypeError;
+                }
+                assert(failed);
+              }
+            }
+          }
+        });
+        if (typeof Float16Array !== 'undefined')
+          check(label + ': Float16Array', () => {
+            const input = new Float16Array([1.5, 2]),
+              copy = O.deepClone(input);
+            assert(copy !== input && copy[0] === 1.5 && copy.buffer !== input.buffer);
+          });
+      }
+      try {
+        suite(globalThis.Objects, 'UMD');
+        const esm = await import('../../package/dist/go-objects.mjs');
+        suite(esm.default, 'ESM');
+        const modules = await import('../../package/index.mjs');
+        suite(modules.default, 'Static ESM');
+      } catch (error) {
+        results.push({ name: 'bundle loading', pass: false, error: String(error.stack || error) });
+      }
+      const report = {
+        userAgent: navigator.userAgent,
+        passed: results.filter((r) => r.pass).length,
+        failed: results.filter((r) => !r.pass).length,
+        results
+      };
+      globalThis.__testResults = report;
+      document.getElementById('results').textContent = JSON.stringify(report, null, 2);
+    </script>
+  </body>
+</html>
