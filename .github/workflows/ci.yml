@@ -60,7 +60,8 @@ jobs:
           npm run test:runtime -- --node "$CONSUMER_NODE" --tarball "$(find artifacts -name '*.tgz' -print -quit)" "${args[@]}"
   browser:
     needs: verify
-    runs-on: ubuntu-latest
+    # Keep the runner aligned with pinned Playwright 1.57 browser dependencies.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
